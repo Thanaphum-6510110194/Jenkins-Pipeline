@@ -14,6 +14,7 @@ pipeline {
       }
     }
 
+    // ถ้า Build ล้มเหลว pipeline จะหยุดเองอยู่แล้ว -> Unit Tests รันเฉพาะเมื่อ Build สำเร็จ
     stage('Test in Parallel') {
       parallel {
         stage('Unit Tests') {
@@ -31,23 +32,46 @@ pipeline {
       }
     }
 
+    // เพิ่ม parallel stage ถัดจาก Test in Parallel (จำลอง Linux / Windows)
+    stage('OS Matrix (Simulated)') {
+      parallel {
+        stage('Linux Sim') {
+          steps {
+            echo '[Linux] Running simulated checks...'
+          }
+        }
+        stage('Windows Sim') {
+          steps {
+            echo '[Windows] Running simulated checks...'
+          }
+        }
+      }
+    }
+
+    // เก็บผลลัพธ์เป็น artifact
     stage('Test') {
-    steps {
+      steps {
         sh 'echo "All tests passed!" > results.txt'
         archiveArtifacts artifacts: 'results.txt', fingerprint: true
-        }
-    }
-
-    stage('Approval') {
-    steps {
-        input "Do you want to proceed with deployment?"
-     }
-    }
-
-    stage('Deploy') {
-      when {
-        expression { return params.RUN_DEPLOY }   // ถ้า false จะถูกข้าม
       }
+    }
+
+    // อนุมัติแบบ manual ก่อน Deploy + timeout 2 นาที + รันเฉพาะเมื่อ RUN_DEPLOY=true
+    stage('Approval') {
+      when { expression { return params.RUN_DEPLOY } }
+      options { timeout(time: 2, unit: 'MINUTES') }
+      input {
+        message "Deploy to ${params.ENV}? (auto-cancel in 2 minutes)"
+        ok "Approve & Continue"
+      }
+      steps {
+        echo 'Approval received.'
+      }
+    }
+
+    // Deploy จะรันหลัง Approval และตามค่าพารามิเตอร์ ENV
+    stage('Deploy') {
+      when { expression { return params.RUN_DEPLOY } }  // ถ้า false จะถูกข้าม
       steps {
         echo "Deploying application to ${params.ENV}..."
         sh 'ls -l'
@@ -55,15 +79,15 @@ pipeline {
     }
   }
 
-   post {
-        success {
-            echo '✅ Pipeline finished successfully!'
-        }
-        failure {
-            echo '❌ Pipeline failed. Check logs!'
-        }
-        always {
-            echo 'Pipeline completed (success or failure).'
-        }
+  post {
+    success {
+      echo '✅ Pipeline finished successfully!'
     }
+    failure {
+      echo '❌ Pipeline failed. Check logs!'
+    }
+    always {
+      echo 'Pipeline completed (success or failure).'
+    }
+  }
 }
